@@ -1,3 +1,4 @@
+document.getElementById("app").innerHTML = "<h2>App Loaded 🚀</h2>";
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: 'grid' },
   { id: 'subjects', label: 'Subjects', icon: 'book' },
