@@ -114,185 +114,487 @@ async function refreshData(options = {}) {
   }
 }
 
-async function api(url, options = {}) {
-  const config = {
-    method: options.method || 'GET',
-    headers: {
-      Accept: 'application/json'
-    }
-  };
+const STORAGE_KEY = 'studysync:data';
+const QUOTES = [
+  { text: 'Small consistent steps build the strongest academic momentum.', author: 'StudySync' },
+  { text: 'Focus turns scattered effort into visible progress.', author: 'StudySync' },
+  { text: 'Discipline is what keeps your goals moving on quiet days.', author: 'StudySync' },
+  { text: 'A single study block today is better than a perfect plan tomorrow.', author: 'StudySync' },
+  { text: 'Your routine writes the story your grades will tell later.', author: 'StudySync' },
+  { text: 'Protected time is where deep understanding begins.', author: 'StudySync' },
+  { text: 'Momentum feels small while you build it and powerful once it is built.', author: 'StudySync' }
+];
 
-  if (options.body !== undefined) {
-    config.headers['Content-Type'] = 'application/json';
-    config.body = JSON.stringify(options.body);
+function saveData(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function getData(key) {
+  const raw = localStorage.getItem(key);
+  if (!raw) {
+    return null;
   }
 
-  const fetchUrl = url.startsWith('/') ? url.slice(1) : url;
-
   try {
-    const response = await fetch(fetchUrl, config);
-    const isJson = response.headers.get('content-type')?.includes('application/json');
-    const payload = isJson ? await response.json() : {};
-
-    if (!response.ok) {
-      return staticApi(url, options);
-    }
-
-    return payload;
+    return JSON.parse(raw);
   } catch (error) {
-    return staticApi(url, options);
+    return null;
   }
 }
 
-function staticApi(url, options = {}) {
-  const method = (options.method || 'GET').toUpperCase();
+function getAppStorage() {
+  const stored = getData(STORAGE_KEY) || {};
+  return {
+    subjects: Array.isArray(stored.subjects) ? stored.subjects : [],
+    tasks: Array.isArray(stored.tasks) ? stored.tasks : [],
+    sessions: Array.isArray(stored.sessions) ? stored.sessions : [],
+    studyDays: Array.isArray(stored.studyDays) ? stored.studyDays : [],
+    settings: {
+      studentName: stored.settings?.studentName || 'Alex',
+      weeklyGoalHours: Number(stored.settings?.weeklyGoalHours) || 10,
+      focusDurationMinutes: Number(stored.settings?.focusDurationMinutes) || 25
+    },
+    focusTimer: {
+      status: stored.focusTimer?.status || 'idle',
+      durationSec: Number(stored.focusTimer?.durationSec) || 1500,
+      elapsedSec: Number(stored.focusTimer?.elapsedSec) || 0,
+      startedAt: stored.focusTimer?.startedAt || null,
+      subjectId: stored.focusTimer?.subjectId || null,
+      label: stored.focusTimer?.label || 'Focus Session',
+      autoSavedSessionId: stored.focusTimer?.autoSavedSessionId || null,
+      lastCompletedAt: stored.focusTimer?.lastCompletedAt || null,
+      updatedAt: stored.focusTimer?.updatedAt || new Date().toISOString()
+    },
+    counters: {
+      subject: Number(stored.counters?.subject) || 1,
+      task: Number(stored.counters?.task) || 1,
+      session: Number(stored.counters?.session) || 1
+    }
+  };
+}
+
+function persistAppStorage(value) {
+  saveData(STORAGE_KEY, value);
+}
+
+function getNextId(type, storage) {
+  const next = Number(storage.counters?.[type] || 1);
+  storage.counters[type] = next + 1;
+  return next;
+}
+
+function api(url, options = {}) {
   const pathname = new URL(url, 'https://example.com').pathname;
+  const method = (options.method || 'GET').toUpperCase();
+  const body = options.body || {};
+  const storage = getAppStorage();
 
-  if (method === 'GET' && pathname === '/api/bootstrap') {
-    return Promise.resolve(buildStaticBootstrap());
+  if (pathname === '/api/bootstrap' && method === 'GET') {
+    return Promise.resolve(buildBootstrap(storage));
   }
 
-  if (method === 'GET' && pathname === '/api/subjects') {
-    return Promise.resolve([]);
+  if (pathname === '/api/subjects') {
+    if (method === 'GET') {
+      return Promise.resolve([...storage.subjects]);
+    }
+
+    if (method === 'POST') {
+      const subject = {
+        id: getNextId('subject', storage),
+        name: body.name || 'New subject',
+        color: body.color || '#4B7BF5',
+        targetHours: Number(body.targetHours) || 3,
+        createdAt: getTodayKey()
+      };
+      storage.subjects = [...storage.subjects, subject];
+      persistAppStorage(storage);
+      return Promise.resolve(subject);
+    }
   }
 
-  if (method === 'POST' && pathname === '/api/subjects') {
-    return Promise.resolve({ id: 1 });
+  const subjectMatch = pathname.match(/^\/api\/subjects\/(\d+)$/);
+  if (subjectMatch) {
+    const subjectId = Number(subjectMatch[1]);
+    if (method === 'PUT') {
+      storage.subjects = storage.subjects.map((subject) =>
+        subject.id === subjectId
+          ? { ...subject, name: body.name || subject.name, color: body.color || subject.color, targetHours: Number(body.targetHours) || subject.targetHours }
+          : subject
+      );
+      persistAppStorage(storage);
+      return Promise.resolve({ ok: true });
+    }
+
+    if (method === 'DELETE') {
+      storage.subjects = storage.subjects.filter((subject) => subject.id !== subjectId);
+      storage.tasks = storage.tasks.map((task) =>
+        task.subjectId === subjectId ? { ...task, subjectId: null } : task
+      );
+      storage.sessions = storage.sessions.map((session) =>
+        session.subjectId === subjectId ? { ...session, subjectId: null } : session
+      );
+      persistAppStorage(storage);
+      return Promise.resolve({ ok: true });
+    }
   }
 
-  if (method === 'PUT' && pathname.startsWith('/api/subjects/')) {
+  if (pathname === '/api/tasks') {
+    if (method === 'GET') {
+      return Promise.resolve([...storage.tasks]);
+    }
+
+    if (method === 'POST') {
+      const task = {
+        id: getNextId('task', storage),
+        title: body.title || 'New task',
+        subjectId: body.subjectId || null,
+        plannedDate: body.plannedDate || getTodayKey(),
+        dueDate: body.dueDate || null,
+        startTime: body.startTime || null,
+        durationMinutes: Number(body.durationMinutes) || 60,
+        notes: body.notes || '',
+        completed: Boolean(body.completed),
+        completedAt: body.completed ? new Date().toISOString() : null,
+        createdAt: new Date().toISOString()
+      };
+      storage.tasks = [...storage.tasks, task];
+      persistAppStorage(storage);
+      return Promise.resolve(task);
+    }
+  }
+
+  const taskMatch = pathname.match(/^\/api\/tasks\/(\d+)$/);
+  if (taskMatch) {
+    const taskId = Number(taskMatch[1]);
+    if (method === 'PUT') {
+      storage.tasks = storage.tasks.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              title: body.title || task.title,
+              subjectId: body.subjectId || null,
+              plannedDate: body.plannedDate || task.plannedDate,
+              dueDate: body.dueDate || null,
+              startTime: body.startTime || null,
+              durationMinutes: Number(body.durationMinutes) || task.durationMinutes,
+              notes: body.notes || task.notes,
+              completed: Boolean(body.completed),
+              completedAt: body.completed ? task.completedAt || new Date().toISOString() : null
+            }
+          : task
+      );
+      persistAppStorage(storage);
+      return Promise.resolve({ ok: true });
+    }
+
+    if (method === 'DELETE') {
+      storage.tasks = storage.tasks.filter((task) => task.id !== taskId);
+      persistAppStorage(storage);
+      return Promise.resolve({ ok: true });
+    }
+  }
+
+  if (pathname.match(/^\/api\/tasks\/(\d+)\/toggle$/) && method === 'PATCH') {
+    const match = pathname.match(/^\/api\/tasks\/(\d+)\/toggle$/);
+    const taskId = Number(match[1]);
+    storage.tasks = storage.tasks.map((task) =>
+      task.id === taskId
+        ? {
+            ...task,
+            completed: Boolean(body.completed),
+            completedAt: body.completed ? task.completedAt || new Date().toISOString() : null
+          }
+        : task
+    );
+    persistAppStorage(storage);
     return Promise.resolve({ ok: true });
   }
 
-  if (method === 'DELETE' && pathname.startsWith('/api/subjects/')) {
+  if (pathname === '/api/sessions' && method === 'GET') {
+    return Promise.resolve([...storage.sessions]);
+  }
+
+  if (pathname === '/api/sessions' && method === 'POST') {
+    const session = {
+      id: getNextId('session', storage),
+      subjectId: body.subjectId || null,
+      durationMinutes: Number(body.durationMinutes) || 0,
+      source: body.source || 'manual',
+      notes: body.notes || '',
+      sessionDate: body.sessionDate || getTodayKey(),
+      createdAt: new Date().toISOString()
+    };
+    storage.sessions = [...storage.sessions, session];
+    if (!storage.studyDays.includes(session.sessionDate)) {
+      storage.studyDays = [...storage.studyDays, session.sessionDate];
+    }
+    persistAppStorage(storage);
+    return Promise.resolve(session);
+  }
+
+  if (pathname === '/api/mark-studied' && method === 'POST') {
+    const date = body.date || getTodayKey();
+    if (!storage.studyDays.includes(date)) {
+      storage.studyDays = [...storage.studyDays, date];
+    }
+    persistAppStorage(storage);
+    return Promise.resolve({ ok: true, date });
+  }
+
+  if (pathname === '/api/focus-timer' && method === 'GET') {
+    return Promise.resolve({ ...storage.focusTimer });
+  }
+
+  if (pathname === '/api/focus-timer/start' && method === 'POST') {
+    storage.focusTimer = {
+      ...storage.focusTimer,
+      status: 'running',
+      durationSec: Number(body.durationSec) || storage.focusTimer.durationSec,
+      elapsedSec: 0,
+      startedAt: new Date().toISOString(),
+      subjectId: body.subjectId || null,
+      label: body.label || storage.focusTimer.label,
+      updatedAt: new Date().toISOString()
+    };
+    persistAppStorage(storage);
     return Promise.resolve({ ok: true });
   }
 
-  if (method === 'GET' && pathname === '/api/tasks') {
-    return Promise.resolve([]);
-  }
-
-  if (method === 'POST' && pathname === '/api/tasks') {
-    return Promise.resolve({ id: 1 });
-  }
-
-  if ((method === 'PUT' || method === 'DELETE') && pathname.startsWith('/api/tasks/')) {
+  if (pathname === '/api/focus-timer/pause' && method === 'POST') {
+    const liveTimer = getLiveFocusTimer();
+    storage.focusTimer = {
+      ...storage.focusTimer,
+      status: 'paused',
+      elapsedSec: liveTimer.elapsedSec,
+      startedAt: null,
+      updatedAt: new Date().toISOString()
+    };
+    persistAppStorage(storage);
     return Promise.resolve({ ok: true });
   }
 
-  if (method === 'PATCH' && pathname.match(/^\/api\/tasks\/\d+\/toggle$/)) {
+  if (pathname === '/api/focus-timer/resume' && method === 'POST') {
+    storage.focusTimer = {
+      ...storage.focusTimer,
+      status: 'running',
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    persistAppStorage(storage);
     return Promise.resolve({ ok: true });
   }
 
-  if (method === 'GET' && pathname === '/api/sessions') {
-    return Promise.resolve([]);
+  if (pathname === '/api/focus-timer/reset' && method === 'POST') {
+    storage.focusTimer = {
+      ...storage.focusTimer,
+      status: 'idle',
+      elapsedSec: 0,
+      startedAt: null,
+      subjectId: null,
+      label: 'Focus Session',
+      updatedAt: new Date().toISOString()
+    };
+    persistAppStorage(storage);
+    return Promise.resolve({ ok: true });
   }
 
-  if (method === 'POST' && pathname === '/api/sessions') {
-    return Promise.resolve({ id: 1 });
-  }
-
-  if (method === 'POST' && pathname === '/api/mark-studied') {
-    return Promise.resolve({ ok: true, date: getTodayKey() });
-  }
-
-  if (method === 'GET' && pathname === '/api/focus-timer') {
-    return Promise.resolve(buildStaticFocusTimer());
-  }
-
-  if (
-    method === 'POST' &&
-    ['/api/focus-timer/start', '/api/focus-timer/pause', '/api/focus-timer/resume', '/api/focus-timer/reset'].includes(pathname)
-  ) {
-    return Promise.resolve(buildStaticFocusTimer(pathname));
-  }
-
-  if (method === 'PUT' && pathname === '/api/settings') {
+  if (pathname === '/api/settings' && method === 'PUT') {
+    storage.settings = {
+      studentName: body.studentName || storage.settings.studentName,
+      weeklyGoalHours: Number(body.weeklyGoalHours) || storage.settings.weeklyGoalHours,
+      focusDurationMinutes: Number(body.focusDurationMinutes) || storage.settings.focusDurationMinutes
+    };
+    if (storage.focusTimer.status === 'idle') {
+      storage.focusTimer.durationSec = storage.settings.focusDurationMinutes * 60;
+    }
+    persistAppStorage(storage);
     return Promise.resolve({ ok: true });
   }
 
   return Promise.resolve({ ok: true });
 }
 
-function buildStaticBootstrap() {
+function buildBootstrap(storage) {
+  const subjects = [...storage.subjects];
+  const tasks = [...storage.tasks];
+  const sessions = [...storage.sessions];
+  const studyDays = [...storage.studyDays];
+  const settings = { ...storage.settings };
+  const focusTimer = { ...storage.focusTimer };
   const today = getTodayKey();
-  const settings = {
-    studentName: 'StudySync User',
-    weeklyGoalHours: 10,
-    focusDurationMinutes: 25
-  };
-  const focusTimer = buildStaticFocusTimer();
-  const tasks = [];
-  const subjects = [];
-  const sessions = [];
-  const weeklyHours = Array.from({ length: 7 }, (_, index) => {
-    const date = shiftDateKey(shiftDateKey(today, -6), index);
+
+  const totalMinutes = sessions.reduce((sum, session) => sum + Number(session.durationMinutes || 0), 0);
+  const completedTasks = tasks.filter((task) => task.completed).length;
+  const pendingTasks = tasks.filter((task) => !task.completed).length;
+  const totalSessions = sessions.length;
+  const focusSessions = sessions.filter((session) => session.source === 'focus').length;
+
+  const weeklyHours = buildWeeklyHours(sessions, today);
+  const weeklyHoursTotal = round(weeklyHours.reduce((sum, day) => sum + day.hours, 0), 1);
+  const streakHeatmap = buildStudyHeatmap(studyDays, sessions, 14, today);
+  const streakDays = calculateCurrentStreakDays(studyDays, sessions, today);
+  const studiedToday = streakHeatmap[streakHeatmap.length - 1]?.studied || false;
+  const progressPercent = Math.min(100, settings.weeklyGoalHours > 0 ? Math.round((weeklyHoursTotal / settings.weeklyGoalHours) * 100) : 0);
+  const hoursRemaining = Math.max(0, round(settings.weeklyGoalHours - weeklyHoursTotal, 1));
+  const totalPoints = Math.round(totalMinutes / 5) + completedTasks * 20 + streakDays * 8 + focusSessions * 12;
+
+  const subjectStats = subjects.map((subject) => {
+    const subjectSessions = sessions.filter((session) => String(session.subjectId) === String(subject.id));
+    const weeklyMinutes = subjectSessions.reduce((sum, session) => sum + Number(session.durationMinutes || 0), 0);
     return {
-      date,
-      label: formatWeekday(date),
-      hours: 0,
-      minutes: 0
+      ...subject,
+      weeklyMinutes,
+      totalSessions: subjectSessions.length
     };
   });
-  const streakHeatmap = Array.from({ length: 14 }, (_, index) => {
-    const date = shiftDateKey(shiftDateKey(today, -13), index);
-    return {
-      date,
-      label: formatWeekday(date),
-      studied: false,
-      minutes: 0
-    };
-  });
-  const stats = {
-    weeklyHours: 0,
+
+  const weakSubjects = pickWeakSubjects(subjectStats);
+  const weakSubjectIds = new Set(weakSubjects.map((subject) => subject.id));
+  const decoratedSubjects = subjectStats.map((subject) => ({
+    ...subject,
+    isWeak: weakSubjectIds.has(subject.id)
+  }));
+
+  const planner = buildPlanner(tasks, today);
+  const badges = buildBadges({
+    totalSessions,
+    totalHours: totalMinutes / 60,
+    streakDays,
+    completedTasks,
+    weeklyHoursTotal,
     weeklyGoalHours: settings.weeklyGoalHours,
-    progressPercent: 0,
-    streakDays: 0,
-    totalSessions: 0,
-    totalPoints: 0,
-    completedTasks: 0,
-    pendingTasks: 0,
-    studiedToday: false,
-    hoursRemaining: settings.weeklyGoalHours,
-    totalHours: 0
+    focusSessions
+  });
+
+  const stats = {
+    weeklyHours: weeklyHoursTotal,
+    weeklyGoalHours: settings.weeklyGoalHours,
+    progressPercent,
+    streakDays,
+    totalSessions,
+    totalPoints,
+    completedTasks,
+    pendingTasks,
+    studiedToday,
+    hoursRemaining,
+    totalHours: round(totalMinutes / 60, 1)
   };
-  const badges = [];
+
+  const quotes = QUOTES;
+  const quote = quotes[new Date(today).getDate() % quotes.length];
+
   return {
     meta: {
       appName: 'StudySync',
       today,
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      timeZone: TIME_ZONE,
       formattedDate: formatReadableDate(today),
-      greeting: 'Welcome',
-      quote: 'StudySync is ready for GitHub Pages.',
-      message: 'This static mode is enabled because the backend is unavailable on GitHub Pages.'
+      greeting: getGreeting(),
+      quote,
+      message: 'Your study data is stored locally and works offline.'
     },
     settings,
     stats,
-    subjects,
+    subjects: decoratedSubjects,
     tasks,
     sessions,
-    planner: buildStaticPlanner(tasks),
+    planner,
     focusTimer,
     analytics: {
       weeklyHours,
-      taskStatus: { completed: 0, pending: 0 },
+      taskStatus: { completed: completedTasks, pending: pendingTasks },
       streakHeatmap,
       badges,
-      subjectActivity: []
+      subjectActivity: decoratedSubjects.map((subject) => ({
+        id: subject.id,
+        name: subject.name,
+        color: subject.color,
+        weeklyHours: round(subject.weeklyMinutes / 60, 1),
+        targetHours: subject.targetHours,
+        sessionsCount: subject.totalSessions,
+        isWeak: subject.isWeak
+      }))
     },
     insights: {
-      weakSubjects: [],
-      todayTasks: [],
-      badgeCount: 0,
-      nextMilestone: 'Add your first task to get started.',
-      streakPrompt: 'Track your first study session and build momentum.'
+      weakSubjects,
+      todayTasks: tasks.filter((task) => task.plannedDate === today),
+      badgeCount: badges.filter((badge) => badge.earned).length,
+      nextMilestone:
+        hoursRemaining > 0
+          ? `${hoursRemaining} more hour${hoursRemaining === 1 ? '' : 's'} to hit this week's goal.`
+          : 'Weekly goal complete. Build on the momentum with one more focused block.',
+      streakPrompt:
+        studiedToday
+          ? 'You already showed up today. Protect the streak with another deliberate session.'
+          : 'Keep your streak alive with one focused study block today.'
     }
   };
 }
 
-function buildStaticPlanner(tasks) {
-  const today = getTodayKey();
+function buildWeeklyHours(sessions, today) {
+  const start = shiftDateKey(today, -6);
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = shiftDateKey(start, index);
+    const minutes = sessions
+      .filter((session) => session.sessionDate === date)
+      .reduce((sum, session) => sum + Number(session.durationMinutes || 0), 0);
+    return {
+      date,
+      label: formatWeekday(date),
+      hours: round(minutes / 60, 1),
+      minutes
+    };
+  });
+}
+
+function buildStudyHeatmap(studyDays, sessions, days, today) {
+  const activityDates = new Set([
+    ...studyDays,
+    ...sessions.map((session) => session.sessionDate)
+  ]);
+  const start = shiftDateKey(today, -(days - 1));
+  return Array.from({ length: days }, (_, index) => {
+    const date = shiftDateKey(start, index);
+    const minutes = sessions
+      .filter((session) => session.sessionDate === date)
+      .reduce((sum, session) => sum + Number(session.durationMinutes || 0), 0);
+    return {
+      date,
+      label: formatWeekday(date),
+      studied: activityDates.has(date),
+      minutes
+    };
+  });
+}
+
+function calculateCurrentStreakDays(studyDays, sessions, today) {
+  const activityDates = new Set([
+    ...studyDays,
+    ...sessions.map((session) => session.sessionDate)
+  ]);
+  let streak = 0;
+  for (let index = 0; index < 365; index += 1) {
+    const date = shiftDateKey(today, -index);
+    if (!activityDates.has(date)) {
+      break;
+    }
+    streak += 1;
+  }
+  return streak;
+}
+
+function getQuoteForDate(dateKey) {
+  const quoteIndex = new Date(dateKey).getDate() % QUOTES.length;
+  return QUOTES[quoteIndex];
+}
+
+function buildPlanner(tasks, today) {
+  const sortedTasks = [...tasks].sort((left, right) => {
+    if (left.plannedDate !== right.plannedDate) {
+      return left.plannedDate.localeCompare(right.plannedDate);
+    }
+    return (left.startTime || '23:59').localeCompare(right.startTime || '23:59');
+  });
   return Array.from({ length: 7 }, (_, index) => {
     const date = shiftDateKey(today, index);
     return {
@@ -304,40 +606,9 @@ function buildStaticPlanner(tasks) {
         day: 'numeric',
         year: null
       }),
-      tasks: tasks.filter((task) => task.plannedDate === date)
+      tasks: sortedTasks.filter((task) => task.plannedDate === date)
     };
   });
-}
-
-function buildStaticFocusTimer(pathname) {
-  const timer = {
-    status: 'idle',
-    durationSec: 1500,
-    elapsedSec: 0,
-    startedAt: null,
-    subjectId: null,
-    label: 'Focus Session',
-    autoSavedSessionId: null,
-    lastCompletedAt: null,
-    updatedAt: new Date().toISOString()
-  };
-
-  if (pathname === '/api/focus-timer/start') {
-    timer.status = 'running';
-    timer.startedAt = new Date().toISOString();
-  }
-
-  if (pathname === '/api/focus-timer/pause') {
-    timer.status = 'paused';
-    timer.elapsedSec = 60;
-  }
-
-  if (pathname === '/api/focus-timer/resume') {
-    timer.status = 'running';
-    timer.startedAt = new Date().toISOString();
-  }
-
-  return timer;
 }
 
 function getTodayKey() {
