@@ -1,0 +1,16 @@
+{
+  "name": "studysync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "StudySync modern student productivity web app",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node test/studysync.test.js"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
