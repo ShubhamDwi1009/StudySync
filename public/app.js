@@ -430,12 +430,12 @@ function buildBootstrap(storage) {
   const focusSessions = sessions.filter((session) => session.source === 'focus').length;
 
   const weeklyHours = buildWeeklyHours(sessions, today);
-  const weeklyHoursTotal = round(weeklyHours.reduce((sum, day) => sum + day.hours, 0), 1);
+  const weeklyHoursTotal = Math.round(weeklyHours.reduce((sum, day) => sum + day.hours, 0) * 10) / 10;
   const streakHeatmap = buildStudyHeatmap(studyDays, sessions, 14, today);
   const streakDays = calculateCurrentStreakDays(studyDays, sessions, today);
   const studiedToday = streakHeatmap[streakHeatmap.length - 1]?.studied || false;
   const progressPercent = Math.min(100, settings.weeklyGoalHours > 0 ? Math.round((weeklyHoursTotal / settings.weeklyGoalHours) * 100) : 0);
-  const hoursRemaining = Math.max(0, round(settings.weeklyGoalHours - weeklyHoursTotal, 1));
+  const hoursRemaining = Math.max(0, Math.round((settings.weeklyGoalHours - weeklyHoursTotal) * 10) / 10);
   const totalPoints = Math.round(totalMinutes / 5) + completedTasks * 20 + streakDays * 8 + focusSessions * 12;
 
   const subjectStats = subjects.map((subject) => {
@@ -477,7 +477,7 @@ function buildBootstrap(storage) {
     pendingTasks,
     studiedToday,
     hoursRemaining,
-    totalHours: round(totalMinutes / 60, 1)
+    totalHours: Math.round((totalMinutes / 60) * 10) / 10
   };
 
   const quotes = QUOTES;
@@ -509,7 +509,7 @@ function buildBootstrap(storage) {
         id: subject.id,
         name: subject.name,
         color: subject.color,
-        weeklyHours: round(subject.weeklyMinutes / 60, 1),
+        weeklyHours: Math.round((subject.weeklyMinutes / 60) * 10) / 10,
         targetHours: subject.targetHours,
         sessionsCount: subject.totalSessions,
         isWeak: subject.isWeak
@@ -541,7 +541,7 @@ function buildWeeklyHours(sessions, today) {
     return {
       date,
       label: formatWeekday(date),
-      hours: round(minutes / 60, 1),
+      hours: Math.round((minutes / 60) * 10) / 10,
       minutes
     };
   });
@@ -586,6 +586,13 @@ function calculateCurrentStreakDays(studyDays, sessions, today) {
 function getQuoteForDate(dateKey) {
   const quoteIndex = new Date(dateKey).getDate() % QUOTES.length;
   return QUOTES[quoteIndex];
+}
+
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
 }
 
 function buildPlanner(tasks, today) {
