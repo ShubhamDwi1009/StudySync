@@ -125,15 +125,217 @@ async function api(url, options = {}) {
     config.body = JSON.stringify(options.body);
   }
 
-  const response = await fetch(url, config);
-  const isJson = response.headers.get('content-type')?.includes('application/json');
-  const payload = isJson ? await response.json() : {};
+  const fetchUrl = url.startsWith('/') ? url.slice(1) : url;
 
-  if (!response.ok) {
-    throw new Error(payload.error || 'Request failed.');
+  try {
+    const response = await fetch(fetchUrl, config);
+    const isJson = response.headers.get('content-type')?.includes('application/json');
+    const payload = isJson ? await response.json() : {};
+
+    if (!response.ok) {
+      return staticApi(url, options);
+    }
+
+    return payload;
+  } catch (error) {
+    return staticApi(url, options);
+  }
+}
+
+function staticApi(url, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  const pathname = new URL(url, 'https://example.com').pathname;
+
+  if (method === 'GET' && pathname === '/api/bootstrap') {
+    return Promise.resolve(buildStaticBootstrap());
   }
 
-  return payload;
+  if (method === 'GET' && pathname === '/api/subjects') {
+    return Promise.resolve([]);
+  }
+
+  if (method === 'POST' && pathname === '/api/subjects') {
+    return Promise.resolve({ id: 1 });
+  }
+
+  if (method === 'PUT' && pathname.startsWith('/api/subjects/')) {
+    return Promise.resolve({ ok: true });
+  }
+
+  if (method === 'DELETE' && pathname.startsWith('/api/subjects/')) {
+    return Promise.resolve({ ok: true });
+  }
+
+  if (method === 'GET' && pathname === '/api/tasks') {
+    return Promise.resolve([]);
+  }
+
+  if (method === 'POST' && pathname === '/api/tasks') {
+    return Promise.resolve({ id: 1 });
+  }
+
+  if ((method === 'PUT' || method === 'DELETE') && pathname.startsWith('/api/tasks/')) {
+    return Promise.resolve({ ok: true });
+  }
+
+  if (method === 'PATCH' && pathname.match(/^\/api\/tasks\/\d+\/toggle$/)) {
+    return Promise.resolve({ ok: true });
+  }
+
+  if (method === 'GET' && pathname === '/api/sessions') {
+    return Promise.resolve([]);
+  }
+
+  if (method === 'POST' && pathname === '/api/sessions') {
+    return Promise.resolve({ id: 1 });
+  }
+
+  if (method === 'POST' && pathname === '/api/mark-studied') {
+    return Promise.resolve({ ok: true, date: getTodayKey() });
+  }
+
+  if (method === 'GET' && pathname === '/api/focus-timer') {
+    return Promise.resolve(buildStaticFocusTimer());
+  }
+
+  if (
+    method === 'POST' &&
+    ['/api/focus-timer/start', '/api/focus-timer/pause', '/api/focus-timer/resume', '/api/focus-timer/reset'].includes(pathname)
+  ) {
+    return Promise.resolve(buildStaticFocusTimer(pathname));
+  }
+
+  if (method === 'PUT' && pathname === '/api/settings') {
+    return Promise.resolve({ ok: true });
+  }
+
+  return Promise.resolve({ ok: true });
+}
+
+function buildStaticBootstrap() {
+  const today = getTodayKey();
+  const settings = {
+    studentName: 'StudySync User',
+    weeklyGoalHours: 10,
+    focusDurationMinutes: 25
+  };
+  const focusTimer = buildStaticFocusTimer();
+  const tasks = [];
+  const subjects = [];
+  const sessions = [];
+  const weeklyHours = Array.from({ length: 7 }, (_, index) => {
+    const date = shiftDateKey(shiftDateKey(today, -6), index);
+    return {
+      date,
+      label: formatWeekday(date),
+      hours: 0,
+      minutes: 0
+    };
+  });
+  const streakHeatmap = Array.from({ length: 14 }, (_, index) => {
+    const date = shiftDateKey(shiftDateKey(today, -13), index);
+    return {
+      date,
+      label: formatWeekday(date),
+      studied: false,
+      minutes: 0
+    };
+  });
+  const stats = {
+    weeklyHours: 0,
+    weeklyGoalHours: settings.weeklyGoalHours,
+    progressPercent: 0,
+    streakDays: 0,
+    totalSessions: 0,
+    totalPoints: 0,
+    completedTasks: 0,
+    pendingTasks: 0,
+    studiedToday: false,
+    hoursRemaining: settings.weeklyGoalHours,
+    totalHours: 0
+  };
+  const badges = [];
+  return {
+    meta: {
+      appName: 'StudySync',
+      today,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      formattedDate: formatReadableDate(today),
+      greeting: 'Welcome',
+      quote: 'StudySync is ready for GitHub Pages.',
+      message: 'This static mode is enabled because the backend is unavailable on GitHub Pages.'
+    },
+    settings,
+    stats,
+    subjects,
+    tasks,
+    sessions,
+    planner: buildStaticPlanner(tasks),
+    focusTimer,
+    analytics: {
+      weeklyHours,
+      taskStatus: { completed: 0, pending: 0 },
+      streakHeatmap,
+      badges,
+      subjectActivity: []
+    },
+    insights: {
+      weakSubjects: [],
+      todayTasks: [],
+      badgeCount: 0,
+      nextMilestone: 'Add your first task to get started.',
+      streakPrompt: 'Track your first study session and build momentum.'
+    }
+  };
+}
+
+function buildStaticPlanner(tasks) {
+  const today = getTodayKey();
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = shiftDateKey(today, index);
+    return {
+      date,
+      dayName: formatWeekday(date, 'long'),
+      shortLabel: formatReadableDate(date, {
+        weekday: null,
+        month: 'short',
+        day: 'numeric',
+        year: null
+      }),
+      tasks: tasks.filter((task) => task.plannedDate === date)
+    };
+  });
+}
+
+function buildStaticFocusTimer(pathname) {
+  const timer = {
+    status: 'idle',
+    durationSec: 1500,
+    elapsedSec: 0,
+    startedAt: null,
+    subjectId: null,
+    label: 'Focus Session',
+    autoSavedSessionId: null,
+    lastCompletedAt: null,
+    updatedAt: new Date().toISOString()
+  };
+
+  if (pathname === '/api/focus-timer/start') {
+    timer.status = 'running';
+    timer.startedAt = new Date().toISOString();
+  }
+
+  if (pathname === '/api/focus-timer/pause') {
+    timer.status = 'paused';
+    timer.elapsedSec = 60;
+  }
+
+  if (pathname === '/api/focus-timer/resume') {
+    timer.status = 'running';
+    timer.startedAt = new Date().toISOString();
+  }
+
+  return timer;
 }
 
 function renderLoading() {
