@@ -583,6 +583,28 @@ function calculateCurrentStreakDays(studyDays, sessions, today) {
   return streak;
 }
 
+function pickWeakSubjects(subjects) {
+  if (!Array.isArray(subjects) || subjects.length === 0) {
+    return [];
+  }
+
+  const ranked = [...subjects].sort((left, right) => {
+    if (left.weeklyMinutes !== right.weeklyMinutes) {
+      return left.weeklyMinutes - right.weeklyMinutes;
+    }
+    return left.totalSessions - right.totalSessions;
+  });
+
+  const threshold = Math.min(2, ranked.length);
+  return ranked.slice(0, threshold).map((subject) => ({
+    id: subject.id,
+    name: subject.name,
+    color: subject.color,
+    weeklyHours: Math.round((subject.weeklyMinutes / 60) * 10) / 10,
+    targetHours: subject.targetHours
+  }));
+}
+
 function getQuoteForDate(dateKey) {
   const quoteIndex = new Date(dateKey).getDate() % QUOTES.length;
   return QUOTES[quoteIndex];
