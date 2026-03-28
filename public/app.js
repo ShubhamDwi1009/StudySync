@@ -605,6 +605,47 @@ function pickWeakSubjects(subjects) {
   }));
 }
 
+function buildBadges(stats) {
+  const earned = (id) => stats[id] === true || stats[id] > 0;
+  const weeklyProgress = Math.min(100, stats.weeklyGoalHours > 0 ? Math.round((stats.weeklyHours / stats.weeklyGoalHours) * 100) : 0);
+
+  return [
+    {
+      id: 'first-session',
+      name: 'First Session',
+      description: 'Complete your first study session.',
+      earned: stats.totalSessions > 0
+    },
+    {
+      id: 'weekly-goal',
+      name: 'Weekly Goal',
+      description: 'Reach your weekly study goal.',
+      earned: stats.weeklyHours >= stats.weeklyGoalHours && stats.weeklyGoalHours > 0
+    },
+    {
+      id: 'steady-momentum',
+      name: 'Steady Momentum',
+      description: 'Study on at least 3 different days this week.',
+      earned: stats.streakDays >= 3
+    },
+    {
+      id: 'focus-run',
+      name: 'Focus Run',
+      description: 'Complete at least one focus session.',
+      earned: stats.focusSessions > 0
+    },
+    {
+      id: 'progress-builder',
+      name: 'Progress Builder',
+      description: 'Keep building momentum toward your weekly goal.',
+      earned: weeklyProgress >= 50
+    }
+  ].map((badge) => ({
+    ...badge,
+    earned: Boolean(badge.earned)
+  }));
+}
+
 function getQuoteForDate(dateKey) {
   const quoteIndex = new Date(dateKey).getDate() % QUOTES.length;
   return QUOTES[quoteIndex];
