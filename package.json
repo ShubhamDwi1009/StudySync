@@ -11,6 +11,6 @@
     "test": "node test/studysync.test.js"
   },
   "engines": {
-    "node": ">=24.0.0"
+    "node": "18.x"
   }
 }
