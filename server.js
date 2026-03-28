@@ -638,10 +638,7 @@ function buildBootstrap(db) {
   );
 
   const weeklyHours = buildWeeklyHours(db);
-  const weeklyHoursTotal = round(
-    weeklyHours.reduce((sum, day) => sum + day.hours, 0),
-    1
-  );
+  const weeklyHoursTotal = Math.round(weeklyHours.reduce((sum, day) => sum + day.hours, 0) * 10) / 10;
   const streakHeatmap = buildStudyHeatmap(db, 14);
   const streakDays = calculateCurrentStreakDays(db);
   const studiedToday = streakHeatmap[streakHeatmap.length - 1]?.studied ?? false;
@@ -651,7 +648,7 @@ function buildBootstrap(db) {
       ? Math.round((weeklyHoursTotal / settings.weeklyGoalHours) * 100)
       : 0
   );
-  const hoursRemaining = Math.max(0, round(settings.weeklyGoalHours - weeklyHoursTotal, 1));
+  const hoursRemaining = Math.max(0, Math.round((settings.weeklyGoalHours - weeklyHoursTotal) * 10) / 10);
   const totalPoints =
     Math.round(totalMinutes / 5) + completedTasks * 20 + streakDays * 8 + focusSessions * 12;
 
@@ -688,7 +685,7 @@ function buildBootstrap(db) {
     pendingTasks,
     studiedToday,
     hoursRemaining,
-    totalHours: round(totalMinutes / 60, 1)
+    totalHours: Math.round((totalMinutes / 60) * 10) / 10
   };
 
   return {
@@ -719,7 +716,7 @@ function buildBootstrap(db) {
         id: subject.id,
         name: subject.name,
         color: subject.color,
-        weeklyHours: round(subject.weeklyMinutes / 60, 1),
+        weeklyHours: Math.round((subject.weeklyMinutes / 60) * 10) / 10,
         targetHours: subject.targetHours,
         sessionsCount: subject.totalSessions,
         isWeak: subject.isWeak
@@ -888,7 +885,7 @@ function buildWeeklyHours(db) {
     return {
       date,
       label: formatWeekday(date),
-      hours: round(minutes / 60, 1),
+      hours: Math.round((minutes / 60) * 10) / 10,
       minutes
     };
   });
@@ -967,7 +964,7 @@ function pickWeakSubjects(subjects) {
       id: subject.id,
       name: subject.name,
       color: subject.color,
-      weeklyHours: round(subject.weeklyMinutes / 60, 1),
+      weeklyHours: Math.round((subject.weeklyMinutes / 60) * 10) / 10,
       targetHours: subject.targetHours
     }));
 }
@@ -1508,11 +1505,6 @@ function createHttpError(statusCode, message) {
   const error = new Error(message);
   error.statusCode = statusCode;
   return error;
-}
-
-function round(value, decimals = 1) {
-  const precision = 10 ** decimals;
-  return Math.round(value * precision) / precision;
 }
 
 process.on('uncaughtException', (error) => {
