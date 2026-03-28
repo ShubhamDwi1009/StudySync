@@ -29,6 +29,8 @@ const PAGE_META = {
   }
 };
 
+const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
 const state = {
   data: null,
   view: localStorage.getItem('studysync:view') || 'dashboard',
@@ -336,6 +338,64 @@ function buildStaticFocusTimer(pathname) {
   }
 
   return timer;
+}
+
+function getTodayKey() {
+  return formatDateKey(new Date());
+}
+
+function formatDateKey(date) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+
+  const parts = Object.fromEntries(
+    formatter
+      .formatToParts(date)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value])
+  );
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function shiftDateKey(dateKey, deltaDays) {
+  const date = new Date(`${dateKey}T12:00:00`);
+  date.setDate(date.getDate() + deltaDays);
+  return formatDateKey(date);
+}
+
+function formatReadableDate(dateKey, options = {}) {
+  const formatOptions = {
+    timeZone: TIME_ZONE
+  };
+
+  if (options.weekday !== null) {
+    formatOptions.weekday = options.weekday || 'long';
+  }
+  if (options.month !== null) {
+    formatOptions.month = options.month || 'long';
+  }
+  if (options.day !== null) {
+    formatOptions.day = options.day || 'numeric';
+  }
+  if (options.year !== null) {
+    formatOptions.year = options.year || 'numeric';
+  }
+
+  return new Intl.DateTimeFormat('en-US', formatOptions).format(
+    new Date(`${dateKey}T12:00:00`)
+  );
+}
+
+function formatWeekday(dateKey, weekday = 'short') {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: TIME_ZONE,
+    weekday
+  }).format(new Date(`${dateKey}T12:00:00`));
 }
 
 function renderLoading() {
